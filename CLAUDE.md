@@ -23,12 +23,15 @@ Update `docs/03` before you finish. It is how the next session starts.
 - **Windows. Use the venv explicitly:** `./.venv/Scripts/python.exe -m pytest -q`
   (expect **117 passed**, ~70 s). The package is installed editable, so
   `./.venv/Scripts/python.exe -m dbh_tool.cli ...` works, as does `dbh ...`.
-- **This is not a git repository.** Do not run `git status`/`git diff` expecting
-  history, and do not `git init` without asking.
+- Git repository, `main` tracking `origin/main` at
+  <https://github.com/LeonardLind/DBH-Tool>. Commit or push only when asked.
 - `Las-Sample/Yaloch Maya.las` is a 0.92 GB local sample (35.5 M points, no CRS,
-  classification empty, 59×55 m, 30.8 m relief, ~24,500 pts/m²). **Never commit it.**
-  Reads in ~3 s, so full passes are affordable.
-- `out/` is generated output. Regenerate freely.
+  classification empty, 59×55 m, 30.8 m relief, ~24,500 pts/m²). **Gitignored, and
+  it must stay that way** — it is above GitHub's file limit and not ours to
+  redistribute. A fresh clone has no point cloud; ask the user for one.
+- `out/` is generated output, gitignored. Regenerate freely.
+- `data/reference_trees.csv` is tracked but header-only. If it ever holds real
+  survey measurements, check with the user before committing them.
 - Writing Python via bash heredocs has mangled escapes and apostrophes here. Prefer
   the Write/Edit tools for source files.
 
