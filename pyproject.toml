@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=65"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dbh-tool"
+version = "0.1.0"
+description = "DBH estimation from terrestrial/mobile LiDAR point clouds with multi-model comparison and explicit uncertainty"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "laspy>=2.5",
+    "matplotlib>=3.7",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.4"]
+# Ground-classifier benchmarking (CSF/SMRF) needs the PDAL C++ library, which is
+# not pip-installable on Windows. See docs DEC-006. Install via conda:
+#   conda install -c conda-forge pdal python-pdal
+pdal = []
+
+[project.scripts]
+dbh = "dbh_tool.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = ["error::RuntimeWarning"]

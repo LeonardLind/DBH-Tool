@@ -1,0 +1,28 @@
+# Point clouds: the working sample is 0.92 GB, far above GitHub's file limit,
+# and is not ours to redistribute. Keep clouds local.
+Las-Sample/
+*.las
+*.laz
+*.e57
+
+# Generated measurement output, figures and reports
+out/
+
+# Note: data/reference_trees.csv IS tracked. It is a header-only template that the
+# docs point at, so a fresh clone needs it. Once it holds real survey measurements,
+# decide deliberately whether those should be public before committing them.
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
