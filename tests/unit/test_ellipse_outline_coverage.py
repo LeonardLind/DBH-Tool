@@ -11,7 +11,12 @@ from dbh_tool.fitting.common import (
 )
 from dbh_tool.fitting.ellipse import ellipse_perimeter, fit_ellipse
 from dbh_tool.fitting.outline import fit_outline_radial_median
-from dbh_tool.synthetic import circle_section, ellipse_section, fluted_section
+from dbh_tool.synthetic import (
+    circle_section,
+    ellipse_section,
+    fluted_section,
+    with_neighbour_cluster,
+)
 
 
 # --------------------------------------------------------------- ellipse -----
@@ -51,6 +56,155 @@ def test_ellipse_rejects_implausible_axis_ratio():
     fit = fit_ellipse(s.xy, max_axis_ratio=3.0)
     assert not fit.valid
     assert any("axis_ratio_above" in w for w in fit.warnings)
+
+
+# ------------------------------------------- ellipse acceptance gates --------
+# DEC-016. Docs 02 section 6 required from the start that "ellipse acceptance
+# should require sufficient angular coverage and should be compared with the
+# circle"; only the axis-ratio half was implemented, so the model returned a
+# confident shape from a quarter arc or a vegetation clump. Measured behaviour
+# behind the thresholds is in docs 02 section 24.
+
+def test_short_arc_is_declined_and_would_have_been_badly_wrong():
+    """A 120-degree arc of a *circular* stem: the failure DEC-016 exists to stop.
+
+    The fit is still computed and still exported, so the test can assert both
+    halves: it is declined, and the number it would have reported is badly wrong.
+    A circular stem is called a 1.4-ratio oval and the diameter is out by ~12 cm.
+    """
+    s = circle_section(diameter_m=0.40, n_points=600, noise_m=0.004, arc_deg=120.0)
+    fit = fit_ellipse(s.xy)
+    assert not fit.valid
+    assert any("ellipse_angular_coverage" in w or "ellipse_angular_gap" in w
+               for w in fit.warnings)
+    # The rejected geometry is still there for a reviewer to inspect.
+    assert fit.extra["axis_ratio"] > 1.3
+    assert abs(fit.diameter_m - 0.40) > 0.05
+
+
+def test_wide_gap_is_declined_even_when_both_arcs_are_clean():
+    """Two clean arcs with a wide gap between them: the ellipse across the gap is
+    extrapolated, not measured -- the same argument as outline.max_bridge_gap_deg.
+    """
+    a = circle_section(diameter_m=0.40, n_points=300, noise_m=0.004,
+                       arc_deg=100.0, start_deg=0.0, seed=1)
+    b = circle_section(diameter_m=0.40, n_points=300, noise_m=0.004,
+                       arc_deg=100.0, start_deg=210.0, seed=2)
+    xy = np.vstack([a.xy, b.xy])
+    fit = fit_ellipse(xy)
+    assert not fit.valid
+    assert any("ellipse_angular_gap" in w for w in fit.warnings)
+    assert fit.largest_gap_deg > 100.0
+
+
+def test_volumetric_clutter_is_declined_by_the_shell_gate():
+    """A clump attached to the stem gives full angular coverage, so only the
+    shell-thinness gate can decline it. Before DEC-016 nothing did.
+    """
+    s = with_neighbour_cluster(
+        circle_section(diameter_m=0.40, n_points=600, noise_m=0.004, seed=3),
+        offset_m=(0.28, 0.0), n_points=300, spread_m=0.05, seed=3)
+    fit = fit_ellipse(s.xy)
+    assert not fit.valid
+    assert any("ellipse_normalised_residual" in w for w in fit.warnings)
+    # Coverage cannot catch this one: the contaminant is *inside* the circumference.
+    assert fit.angular_coverage > 0.95
+
+
+def test_gates_do_not_reject_ordinary_well_observed_stems():
+    """The gates must cost real measurements nothing. A conservative model that
+    declines everything is as useless as a permissive one that accepts everything.
+    """
+    good = [
+        circle_section(diameter_m=0.40, n_points=600, noise_m=0.002, seed=4),
+        circle_section(diameter_m=0.40, n_points=600, noise_m=0.008, seed=5),
+        circle_section(diameter_m=0.40, n_points=600, noise_m=0.015, seed=6),
+        circle_section(diameter_m=0.40, n_points=600, noise_m=0.004,
+                       arc_deg=270.0, seed=7),
+        ellipse_section(major_m=0.46, minor_m=0.38, rotation_deg=30.0,
+                        n_points=600, noise_m=0.004, seed=8),
+        ellipse_section(major_m=0.46, minor_m=0.38, rotation_deg=30.0,
+                        n_points=600, noise_m=0.004, arc_deg=300.0, seed=9),
+        fluted_section(mean_diameter_m=0.50, n_lobes=6, flute_amplitude=0.08,
+                       n_points=1200, noise_m=0.003, seed=10),
+    ]
+    for s in good:
+        fit = fit_ellipse(s.xy)
+        assert fit.valid, f"{s.label} was declined: {fit.warnings}"
+
+
+def test_heavy_fluting_is_declined_because_it_is_not_an_ellipse():
+    """The shell gate is a model-adequacy test, not a contamination verdict: a
+    deeply fluted stem is genuine geometry that an ellipse cannot describe, and
+    the outline model exists for exactly that case.
+    """
+    s = fluted_section(mean_diameter_m=0.50, n_lobes=6, flute_amplitude=0.20,
+                       n_points=1200, noise_m=0.003, seed=11)
+    fit = fit_ellipse(s.xy)
+    assert not fit.valid
+    assert any("ellipse_normalised_residual" in w for w in fit.warnings)
+
+
+def test_a_declined_ellipse_still_reports_its_geometry_and_its_reasons():
+    """No geometry is chosen early: a rejected model is evidence, not an absence."""
+    s = circle_section(diameter_m=0.40, n_points=600, noise_m=0.004, arc_deg=90.0)
+    fit = fit_ellipse(s.xy)
+    assert not fit.valid
+    assert fit.warnings
+    assert fit.center_xy is not None
+    assert fit.diameter_m is not None and np.isfinite(fit.diameter_m)
+    for key in ("semi_major_m", "semi_minor_m", "axis_ratio", "rotation_deg",
+                "normalised_radial_residual"):
+        assert key in fit.extra
+
+
+def test_each_gate_is_configurable_and_is_what_caused_the_rejection():
+    """Loosening a gate must re-admit the case, which proves the rejection came
+    from the threshold rather than from a fitting failure.
+    """
+    short = circle_section(diameter_m=0.40, n_points=600, noise_m=0.004,
+                           arc_deg=120.0, seed=12)
+    assert not fit_ellipse(short.xy).valid
+    assert fit_ellipse(short.xy, min_coverage_fraction=0.0, max_gap_deg=360.0,
+                       max_normalised_residual=1.0).valid
+
+    clump = with_neighbour_cluster(
+        circle_section(diameter_m=0.40, n_points=600, noise_m=0.004, seed=13),
+        offset_m=(0.28, 0.0), n_points=300, spread_m=0.05, seed=13)
+    assert not fit_ellipse(clump.xy).valid
+    assert fit_ellipse(clump.xy, max_normalised_residual=1.0).valid
+
+
+def test_gate_records_the_thresholds_it_applied_and_agrees_with_reported_coverage():
+    """A stored fit must say which thresholds produced its verdict, and the
+    coverage the gate used must be the coverage the export shows.
+    """
+    s = circle_section(diameter_m=0.40, n_points=600, noise_m=0.004, seed=14)
+    fit = fit_ellipse(s.xy, min_coverage_fraction=0.65, max_gap_deg=95.0,
+                      max_normalised_residual=0.04)
+    assert fit.valid
+    assert fit.extra["gate_min_coverage_fraction"] == pytest.approx(0.65)
+    assert fit.extra["gate_max_gap_deg"] == pytest.approx(95.0)
+    assert fit.extra["gate_max_normalised_residual"] == pytest.approx(0.04)
+    assert fit.extra["coverage"]["coverage_fraction"] == pytest.approx(
+        fit.angular_coverage)
+    assert fit.extra["normalised_radial_residual"] == pytest.approx(
+        fit.rmse_m / fit.diameter_m)
+
+
+def test_coverage_gate_is_independent_of_eccentricity():
+    """The coverage gate must not act as a hidden axis-ratio gate. A complete
+    outline of a very eccentric ellipse still surrounds its centre, so coverage
+    stays high and only the explicit axis-ratio gate may reject it.
+    """
+    phi = np.linspace(0.0, 2.0 * np.pi, 1500, endpoint=False)
+    a, b = 0.50, 0.20        # ratio 2.5, comfortably under max_axis_ratio
+    r = a * b / np.hypot(b * np.cos(phi), a * np.sin(phi))
+    xy = np.column_stack([r * np.cos(phi), r * np.sin(phi)])
+    fit = fit_ellipse(xy)
+    assert fit.angular_coverage == pytest.approx(1.0)
+    assert fit.extra["axis_ratio"] == pytest.approx(2.5, rel=1e-6)
+    assert fit.valid
 
 
 def test_ellipse_perimeter_matches_circle_when_axes_equal():

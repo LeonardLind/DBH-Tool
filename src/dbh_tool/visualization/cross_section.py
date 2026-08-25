@@ -35,6 +35,43 @@ def _circle_xy(cx, cy, r, n=361):
     return cx + r * np.cos(t), cy + r * np.sin(t)
 
 
+def model_boundary_xy(name: str, fit) -> np.ndarray | None:
+    """Closed boundary polyline of one fitted model, as an (N, 2) array.
+
+    Shared by the export figure and the GUI's section view. Both need to draw exactly
+    the curve the model represents, and two implementations of "where is the ellipse"
+    would eventually disagree about it -- which is precisely the kind of drift that
+    makes a review figure untrustworthy.
+
+    Returns ``None`` when the fit has no drawable boundary (no centre, or a model whose
+    geometry is not a closed curve). A *rejected* fit still has a boundary and still
+    returns one: seeing what a declined model claimed is the point of exporting it.
+    """
+    if fit is None or fit.center_xy is None:
+        return None
+    cx, cy = fit.center_xy
+    if name == "ellipse":
+        need = ("semi_major_m", "semi_minor_m", "rotation_deg")
+        if not all(k in fit.extra for k in need):
+            return None
+        from ..fitting.ellipse import ellipse_boundary
+        return ellipse_boundary(cx, cy, fit.extra["semi_major_m"],
+                                fit.extra["semi_minor_m"],
+                                np.radians(fit.extra["rotation_deg"]))
+    if name.startswith("outline"):
+        poly = fit.extra.get("outline_xy")
+        if poly is None:
+            return None
+        poly = np.asarray(poly, dtype=float)
+        if poly.ndim != 2 or len(poly) < 3:
+            return None
+        return np.vstack([poly, poly[:1]])       # close the ring
+    if "radius_m" in fit.extra:
+        bx, by = _circle_xy(cx, cy, fit.extra["radius_m"])
+        return np.column_stack([bx, by])
+    return None
+
+
 def plot_measurement(measurement, xy: np.ndarray, out_path: str | Path,
                      title: str | None = None) -> Path:
     """Write a four-panel review figure for one measurement.
@@ -66,23 +103,10 @@ def plot_measurement(measurement, xy: np.ndarray, out_path: str | Path,
             continue
         st = MODEL_STYLE.get(name, dict(color="k", ls="-", lw=1.0))
         lbl = f"{name}  D={f.diameter_m * 100:.1f} cm"
-        if name == "ellipse":
-            from ..fitting.ellipse import ellipse_boundary
-            b = ellipse_boundary(f.center_xy[0], f.center_xy[1],
-                                 f.extra["semi_major_m"], f.extra["semi_minor_m"],
-                                 np.radians(f.extra["rotation_deg"]))
-            ax.plot(b[:, 0], b[:, 1], label=lbl, **st)
-        elif name.startswith("outline"):
-            poly = f.extra.get("outline_xy")
-            if poly is not None:
-                poly = np.asarray(poly)
-                ax.plot(np.append(poly[:, 0], poly[0, 0]),
-                        np.append(poly[:, 1], poly[0, 1]), label=lbl, **st)
-        elif "radius_m" in f.extra:
-            cxx, cyy = _circle_xy(f.center_xy[0], f.center_xy[1], f.extra["radius_m"])
-            ax.plot(cxx, cyy, label=lbl, **st)
-        else:
+        b = model_boundary_xy(name, f)
+        if b is None:
             continue
+        ax.plot(b[:, 0], b[:, 1], label=lbl, **st)
         ax.plot(*f.center_xy, marker="+", ms=6, color=st["color"])
 
     ax.set_aspect("equal")

@@ -138,8 +138,13 @@ def fit_all_models(xy: np.ndarray, cfg: RunConfig, bootstrap: bool = False) -> d
     fits["circle_taubin"] = fit_circle_taubin(xy)
     fits["circle_pratt"] = fit_circle_pratt(xy)
     fits["circle_geometric"] = fit_circle_geometric(xy)
+    ec = cfg.ellipse
     fits["ellipse"] = fit_ellipse(
-        xy, max_axis_ratio=3.0)
+        xy, max_axis_ratio=ec.max_axis_ratio,
+        min_coverage_fraction=ec.min_coverage_fraction,
+        max_gap_deg=ec.max_gap_deg,
+        max_normalised_residual=ec.max_normalised_residual,
+        coverage_bin_deg=cfg.coverage.angular_bin_deg)
     rc = cfg.ransac_circle
     fits["circle_ransac"] = fit_circle_ransac(
         xy, residual_threshold_m=rc.residual_threshold_m, max_trials=rc.max_trials,
@@ -186,7 +191,14 @@ def fit_all_models(xy: np.ndarray, cfg: RunConfig, bootstrap: bool = False) -> d
         fitters = {
             "circle_geometric": fit_circle_geometric,
             "circle_pratt": fit_circle_pratt,
-            "ellipse": fit_ellipse,
+            # Resamples must be judged by the same gates as the primary fit,
+            # otherwise the bootstrap measures a different estimator.
+            "ellipse": lambda p: fit_ellipse(
+                p, max_axis_ratio=ec.max_axis_ratio,
+                min_coverage_fraction=ec.min_coverage_fraction,
+                max_gap_deg=ec.max_gap_deg,
+                max_normalised_residual=ec.max_normalised_residual,
+                coverage_bin_deg=cfg.coverage.angular_bin_deg),
             "circle_ransac": lambda p: fit_circle_ransac(
                 p, residual_threshold_m=rc.residual_threshold_m,
                 max_trials=max(60, rc.max_trials // 5),

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import yaml
 
 from dbh_tool.config import RunConfig
 from dbh_tool.evaluation.benchmark import (
@@ -264,6 +265,28 @@ def test_set_config_value_rejects_unknown_paths():
         set_config_value(cfg, "slice.not_a_field", 1)
     with pytest.raises(ValueError):
         set_config_value(cfg, "nope.thickness_m", 1)
+
+
+def test_ellipse_gates_are_configurable_and_survive_a_yaml_round_trip():
+    """DEC-016 gates must be reachable by dotted path, so they are sweepable, and
+    must round-trip through the run configuration that every export records.
+    """
+    from dbh_tool.config import PROVISIONAL_PARAMETERS
+
+    cfg = RunConfig()
+    for path, default in (("ellipse.max_axis_ratio", 3.0),
+                          ("ellipse.min_coverage_fraction", 0.70),
+                          ("ellipse.max_gap_deg", 100.0),
+                          ("ellipse.max_normalised_residual", 0.05)):
+        assert get_config_value(cfg, path) == pytest.approx(default)
+        # Every one of them is uncalibrated, and every export must say so.
+        assert path in PROVISIONAL_PARAMETERS
+
+    tweaked = set_config_value(cfg, "ellipse.min_coverage_fraction", 0.85)
+    assert tweaked.ellipse.min_coverage_fraction == 0.85
+    assert cfg.ellipse.min_coverage_fraction == 0.70
+    assert RunConfig.from_dict(tweaked.to_dict()).ellipse.min_coverage_fraction == 0.85
+    assert "min_coverage_fraction" in yaml.safe_load(tweaked.to_yaml())["ellipse"]
 
 
 # -------------------------------------------------------- free experiments ----

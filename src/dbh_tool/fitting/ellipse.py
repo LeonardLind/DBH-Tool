@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from ..evaluation.coverage import angular_coverage
 from .common import (
     MAX_PLAUSIBLE_DIAMETER_M,
     MIN_PLAUSIBLE_DIAMETER_M,
@@ -33,6 +34,15 @@ MIN_POINTS_ELLIPSE = 6
 # An axis ratio above this is not a plausible stem cross-section; it indicates an
 # under-constrained fit (short arc) or contamination. Provisional, uncalibrated.
 MAX_PLAUSIBLE_AXIS_RATIO = 3.0
+# Acceptance gates added by DEC-016, defaults mirroring config.EllipseConfig.
+# Docs 02 section 6 required from the outset that "ellipse acceptance should
+# require sufficient angular coverage and should be compared with the circle";
+# only the axis-ratio half of that was implemented. Measured behaviour behind
+# these numbers is in docs 02 section 24.
+DEFAULT_MIN_COVERAGE_FRACTION = 0.70
+DEFAULT_MAX_GAP_DEG = 100.0
+DEFAULT_MAX_NORMALISED_RESIDUAL = 0.05
+DEFAULT_COVERAGE_BIN_DEG = 5.0
 
 
 def _conic_to_geometric(coeffs: np.ndarray):
@@ -99,12 +109,35 @@ def ellipse_boundary(cx: float, cy: float, a: float, b: float, theta: float,
     return np.column_stack([cx + u * ct - v * st, cy + u * st + v * ct])
 
 
-def fit_ellipse(points, max_axis_ratio: float = MAX_PLAUSIBLE_AXIS_RATIO) -> FitResult:
+def fit_ellipse(points, max_axis_ratio: float = MAX_PLAUSIBLE_AXIS_RATIO,
+                min_coverage_fraction: float = DEFAULT_MIN_COVERAGE_FRACTION,
+                max_gap_deg: float = DEFAULT_MAX_GAP_DEG,
+                max_normalised_residual: float = DEFAULT_MAX_NORMALISED_RESIDUAL,
+                coverage_bin_deg: float = DEFAULT_COVERAGE_BIN_DEG) -> FitResult:
     """Fit an ellipse and report both axis geometry and area-equivalent diameter.
 
     ``diameter_m`` is the area-equivalent diameter 2*sqrt(a*b), i.e. the diameter
     of the circle with the same cross-sectional area. The individual axes are in
     ``extra`` and must be used for shape interpretation.
+
+    The fit is always computed and always returned: a rejected ellipse keeps its
+    geometry and its reasons so that a reviewer can see what the data would have
+    implied (docs 03, "fit every candidate model before judging"). The gates only
+    decide ``valid``.
+
+    Acceptance gates, all provisional and all listed in
+    :data:`~dbh_tool.config.PROVISIONAL_PARAMETERS`:
+
+    ``max_axis_ratio``
+        a cross-section flatter than this is not a stem.
+    ``min_coverage_fraction`` / ``max_gap_deg``
+        angular support about the fitted centre. Five free parameters need more
+        of the circumference than a circle's three, and an ellipse continued
+        across a wide unobserved arc is extrapolation.
+    ``max_normalised_residual``
+        radial rmse as a fraction of the fitted diameter: a stem surface is a
+        thin shell, a clump of vegetation is a volume. This says the points are
+        not an ellipse shell; it does not say why.
     """
     xy = as_xy(points)
     fit = FitResult(
@@ -179,11 +212,46 @@ def fit_ellipse(points, max_axis_ratio: float = MAX_PLAUSIBLE_AXIS_RATIO) -> Fit
         return fit.invalidate("residuals_not_finite")
     for k, val in residual_stats(res).items():
         setattr(fit, k, val)
+    # Angular support about the fitted centre, on the same binning as the coverage
+    # attached to every other model, so the gate and the exported number agree.
+    cov = angular_coverage(xy, (cx, cy), bin_deg=coverage_bin_deg)
+    fit.angular_coverage = cov["coverage_fraction"]
+    fit.largest_gap_deg = cov["largest_gap_deg"]
+    fit.n_arcs = cov["n_arcs"]
+    fit.extra["coverage"] = cov
+
+    # Shell thinness, normalised so it is comparable across stem sizes.
+    norm_res = (fit.rmse_m / fit.diameter_m
+                if fit.diameter_m and np.isfinite(fit.diameter_m) and fit.diameter_m > 0
+                and fit.rmse_m is not None and np.isfinite(fit.rmse_m) else float("nan"))
+    fit.extra.update({
+        "normalised_radial_residual": float(norm_res),
+        "gate_max_axis_ratio": float(max_axis_ratio),
+        "gate_min_coverage_fraction": float(min_coverage_fraction),
+        "gate_max_gap_deg": float(max_gap_deg),
+        "gate_max_normalised_residual": float(max_normalised_residual),
+    })
+
     fit.valid = True
     fit = check_plausible_diameter(fit)
     # The major diameter must also be physically plausible, not just the summary.
     if not MIN_PLAUSIBLE_DIAMETER_M <= 2.0 * a <= MAX_PLAUSIBLE_DIAMETER_M:
         fit.invalidate("major_axis_implausible")
+    # Every gate is evaluated, and every failure recorded, rather than returning on
+    # the first one: a short arc *and* a thick shell is different evidence from
+    # either alone, and a reviewer needs to see both reasons.
     if axis_ratio > max_axis_ratio:
         fit.invalidate(f"axis_ratio_above_{max_axis_ratio}")
+    if cov["coverage_fraction"] < min_coverage_fraction:
+        fit.invalidate(
+            f"ellipse_angular_coverage_{cov['coverage_fraction']:.2f}"
+            f"_below_{min_coverage_fraction:.2f}")
+    if cov["largest_gap_deg"] > max_gap_deg:
+        fit.invalidate(
+            f"ellipse_angular_gap_{cov['largest_gap_deg']:.0f}deg"
+            f"_above_{max_gap_deg:.0f}deg")
+    if not np.isfinite(norm_res) or norm_res > max_normalised_residual:
+        fit.invalidate(
+            f"ellipse_normalised_residual_{norm_res:.3f}"
+            f"_above_{max_normalised_residual:.3f}")
     return fit

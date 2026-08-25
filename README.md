@@ -8,6 +8,7 @@ The scientific reasoning behind every choice lives in [docs/](docs/):
 
 | document | contents |
 | --- | --- |
+| [00_RUNNING_THE_TOOL.md](docs/00_RUNNING_THE_TOOL.md) | **start here to operate it**: setup, every command, how to read a result |
 | [01_PROBLEM_AND_HANDOVER.md](docs/01_PROBLEM_AND_HANDOVER.md) | problem, scope, stack |
 | [02_SCIENCE_AND_METHODS.md](docs/02_SCIENCE_AND_METHODS.md) | measurement science and methods |
 | [03_PIPELINE_AND_BUILD_LOG.md](docs/03_PIPELINE_AND_BUILD_LOG.md) | pipeline, decisions log, build log, open questions |
@@ -98,7 +99,7 @@ selected:
 | `circle_pratt` | gradient-weighted algebraic fit |
 | `circle_geometric` | orthogonal-distance least squares, the reference definition |
 | `circle_ransac` | robust circle refitted on inliers |
-| `ellipse` | constrained conic; area-equivalent diameter `2*sqrt(ab)` |
+| `ellipse` | constrained conic; area-equivalent diameter `2*sqrt(ab)`. Accepted only with adequate angular support and a thin shell (DEC-016) |
 | `outline_radial_median` | radial-median polygon; area-equivalent diameter from the polar area |
 | `outline_radial_median_inliers` | the same outline on RANSAC inliers (diagnostic, not a competitor) |
 
@@ -126,7 +127,7 @@ implied.
 ./.venv/Scripts/python.exe -m pytest -q
 ```
 
-117 tests. They assert measured behaviour, not just absence of crashes:
+153 tests. They assert measured behaviour, not just absence of crashes:
 
 - circle fits recover a noiseless circle to 1e-9 and are translation/scale equivariant
 - the Kasa short-arc bias is large and negative, and Pratt/Taubin/geometric remove it
@@ -136,12 +137,17 @@ implied.
   and the stem-normal cut recovers the true diameter
 - an attached cluster is classified as contamination, a fluted stem as shape
 - a one-sided stem is flagged rather than answered
+- the ellipse declines a short arc, a wide gap and a vegetation clump, and the
+  test asserts the number it would have reported was badly wrong (DEC-016)
 - the whole pipeline runs through a generated LAS fixture (no proprietary data committed)
 - benchmark bias/MAE/RMSE match hand-computed values, a refused tree raises the
   review rate instead of counting as zero error, and the summary refuses to print
   accuracy when nothing was reported
 - a tape reference is scored against the convex perimeter, not the area-equivalent
 - single-pass multi-crop returns exactly what per-tree cropping returns
+- a review override cannot turn a refused section into a diameter, and approving
+  a refusal records agreement that there is none (GUI, M7)
+- a review decision goes stale when the measurement under it changes
 
 ## Layout
 

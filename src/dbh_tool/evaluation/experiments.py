@@ -93,6 +93,23 @@ SWEEPS: dict[str, dict] = {
         "question": "coverage is bin-size dependent; how much does that matter?",
         "rebuild_ground": False,
     },
+    "ellipse_coverage": {
+        "param": "ellipse.min_coverage_fraction",
+        "values": [0.55, 0.70, 0.85],
+        "question": ("DEC-016: how much of the circumference must an ellipse see "
+                     "before its five parameters are identifiable? Derived on "
+                     "synthetic arcs (docs 02 section 24); a field reference "
+                     "replaces that with a real answer"),
+        "rebuild_ground": False,
+    },
+    "ellipse_shell": {
+        "param": "ellipse.max_normalised_residual",
+        "values": [0.03, 0.05, 0.08],
+        "question": ("DEC-016: how thick may the shell be before the section is "
+                     "not an ellipse? Overlaps heavy fluting by construction, so "
+                     "read it with the anomaly verdict beside it"),
+        "rebuild_ground": False,
+    },
 }
 
 

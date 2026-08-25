@@ -200,6 +200,22 @@ def test_ellipticity_circular_when_axes_are_equal():
     assert out["verdict"] == "CIRCULAR"
 
 
+def test_shape_is_unattributed_when_the_ellipse_is_declined():
+    """The documented knock-on of DEC-016.
+
+    On a short arc the ellipse used to return a large axis ratio, which
+    ``attribute_ellipticity`` then read as genuine ovality. Now the ellipse is
+    declined and the shape is honestly unattributed -- which pushes the tree to
+    review instead of recording a circular stem as oval.
+    """
+    s = circle_section(diameter_m=0.40, n_points=600, noise_m=0.004, arc_deg=120.0)
+    ell = fit_ellipse(s.xy)
+    assert not ell.valid
+    assert ell.extra["axis_ratio"] > 1.3, "the misleading ratio is still exported"
+    out = attribute_ellipticity(ell, vertical_axis((0, 0), 0.0))
+    assert out["verdict"] == "NO_ELLIPSE_FIT"
+
+
 # ------------------------------------------------- contamination vs shape ----
 def _anomaly_for(section, threshold=0.010):
     ransac = fit_circle_ransac(section.xy, residual_threshold_m=threshold, seed=42)

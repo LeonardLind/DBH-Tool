@@ -242,6 +242,12 @@ An ellipse has more degrees of freedom than a circle and can overfit:
 
 Therefore ellipse acceptance should require sufficient angular coverage and should be compared with the circle.
 
+**Implemented in DEC-016; see section 24 for the measurements.** Until then only
+the axis-ratio half of this requirement existed, and section 22 measured what that
+cost. The gates are now angular coverage, largest angular gap, shell thinness
+(radial rmse as a fraction of the fitted diameter) and axis ratio, all in
+`config.EllipseConfig` and all provisional.
+
 ---
 
 # 7. Candidate model 3 — robust / RANSAC circle
@@ -841,8 +847,9 @@ diameter at 72 sectors). Both are reported; the polar integral is primary.
 Field-referenced accuracy is still unavailable, so these are **internal
 sensitivity** results: the same trees re-measured under different settings. They
 cannot say which value is correct. What they *can* say is which parameters change
-the answer enough to be worth calibrating, and that turns the 33-entry provisional
-list into a short priority order.
+the answer enough to be worth calibrating, and that turns the provisional list
+(33 entries when this was run, 37 after DEC-016 added the ellipse gates) into a
+short priority order.
 
 Method: 6 targets on the sample scan (4 distinct measurable stems plus 2
 hard-failure cases so that changes in the refusal rate are visible), each
@@ -887,36 +894,109 @@ but its exact threshold is not delicate.
 
 ## 22. Model agreement across trees, measured
 
-Docs 02 experiment A and B, on 10 targets from the sample scan. Deviation is from
-the per-tree median of all valid models.
+Docs 02 experiment A and B, on the same 10 targets from the sample scan.
+Deviation is from the per-tree median of all valid models. **Regenerated
+2026-08-25 after DEC-016**, with the pre-DEC-016 run reproduced alongside it so
+the effect of the gates is visible rather than inferred.
 
-| model | trees where valid | median deviation | max abs deviation |
-| --- | --- | --- | --- |
-| `circle_ransac` | 5 of 10 | -0.17 cm | **1.98 cm** |
-| `outline_radial_median` | 5 of 10 | +0.15 cm | 0.57 cm |
-| `circle_algebraic` | 9 of 10 | -0.06 cm | 5.36 cm |
-| `circle_taubin` | 9 of 10 | +0.70 cm | 5.36 cm |
-| `circle_geometric` | 9 of 10 | -0.16 cm | 7.47 cm |
-| `circle_pratt` | 9 of 10 | +1.67 cm | 11.22 cm |
-| `ellipse` | 9 of 10 | +0.00 cm | **73.15 cm** |
-| `outline_radial_median_inliers` | 3 of 10 | +0.07 cm | 183.58 cm |
+| model | valid before | median dev before | max abs before | valid after | median dev after | max abs after |
+| --- | --- | --- | --- | --- | --- | --- |
+| `circle_ransac` | 5 of 10 | -0.17 cm | **1.98 cm** | 5 of 10 | -0.17 cm | **1.98 cm** |
+| `outline_radial_median` | 5 of 10 | +0.15 cm | 0.57 cm | 5 of 10 | +0.15 cm | 0.68 cm |
+| `circle_algebraic` | 9 of 10 | -0.06 cm | 5.36 cm | 9 of 10 | -0.35 cm | 10.72 cm |
+| `circle_taubin` | 9 of 10 | +0.70 cm | 5.36 cm | 9 of 10 | +0.08 cm | 0.86 cm |
+| `circle_geometric` | 9 of 10 | -0.16 cm | 7.47 cm | 9 of 10 | -0.18 cm | 7.82 cm |
+| `circle_pratt` | 9 of 10 | +1.67 cm | 11.22 cm | 9 of 10 | +0.88 cm | 10.87 cm |
+| `ellipse` | 9 of 10 | +0.00 cm | **73.15 cm** | **3 of 10** | +0.04 cm | **0.15 cm** |
+| `outline_radial_median_inliers` | 3 of 10 | +0.07 cm | 183.58 cm | 3 of 10 | +0.07 cm | 188.94 cm |
 
-The important column is the second one. **The non-robust models return a number on
-data where the robust model declines to.** RANSAC and the outline were valid on 5
-targets; the ordinary circle fits and the ellipse were "valid" on 9, including
-vegetation clumps. That is not the ordinary fits performing better, it is them
-failing silently, and it is the strongest single argument for keeping a robust
-model in the comparison rather than treating least squares as the default.
+The important column is still "valid": **the non-robust models return a number on
+data where the robust model declines to.** RANSAC and the outline are valid on 5
+targets; the ordinary circle fits are "valid" on 9, including vegetation clumps.
+That is not the ordinary fits performing better, it is them failing silently, and
+it remains the strongest single argument for keeping a robust model in the
+comparison rather than treating least squares as the default.
 
-The ellipse is the most dangerous model in the set on real data: valid on 9 of 10
-targets and deviating by up to 73 cm. Its extra degrees of freedom buy overfitting
-whenever coverage or cleanliness is poor, exactly as section 6 warned. It needs the
-coverage and axis-ratio gates it has, and probably tighter ones.
+### 22.1 What DEC-016 actually did to this table
 
-`circle_pratt` sits systematically ~1.7 cm above the per-tree median. On clean
+**The gates selected the well-behaved subset, they did not merely thin the set.**
+Of the 6 targets whose ellipse is now declined, deviation from the median of the
+other models was 1.6 cm median and 78.9 cm max. Of the 3 still accepted, 0.1 cm
+median and 0.2 cm max. The ellipse row's max deviation fell from 73.15 cm to
+0.15 cm — a factor of ~490 — because the fits that were wrong are the fits that
+were dropped.
+
+Which gate fired, per target:
+
+| target | coverage | gap | rmse / D | ellipse D | median of others | declined by |
+| --- | --- | --- | --- | --- | --- | --- |
+| S01 | 0.97 | 10 deg | 0.066 | 27.1 cm | 26.6 cm | shell |
+| S02 | 1.00 | 0 deg | 0.045 | 18.8 cm | 18.7 cm | *kept* |
+| S03 | 0.83 | 35 deg | 0.131 | 105.9 cm | 106.5 cm | shell |
+| S04 | 0.54 | 60 deg | 0.156 | 129.1 cm | 131.8 cm | coverage |
+| S05 | 0.97 | 10 deg | 0.025 | 35.3 cm | 35.1 cm | *kept* |
+| S06 | 0.97 | 10 deg | 0.120 | 20.3 cm | 20.7 cm | shell |
+| S07 | 0.67 | 85 deg | 0.253 | 100.9 cm | 362.2 cm | coverage (axis ratio 3.69 already declined it) |
+| S08 | 0.26 | 155 deg | 0.080 | 116.5 cm | 195.4 cm | coverage |
+| S09 | 1.00 | 0 deg | 0.044 | 18.8 cm | 18.7 cm | *kept* |
+| S10 | 0.81 | 25 deg | 0.137 | 173.2 cm | 177.3 cm | shell |
+
+**Both gates earn their place, and neither would have sufficed alone.** The shell
+gate caught 4 targets (S01, S03, S06, S10) that had 0.81-0.97 angular coverage and
+gaps of 10-35 degrees — no coverage threshold would have touched them. The
+coverage gate caught 3 (S04, S07, S08) including S08 at 0.26 coverage with a
+155 degree gap. The gap gate never fired alone on real data: coverage always
+caught those cases first, so on this evidence it is redundant here, though it
+remains the cheapest guard against the two-clean-arcs geometry that the synthetic
+panel in section 24.3 exercises and this scan happens not to contain.
+
+**No reported diameter changed on any of the 10 targets.** Status, confidence band
+and selected model are identical before and after. Everything DEC-016 changed on
+this scan is in shape attribution and in the model comparison — which is what it
+was for, but it also means the gates cost nothing measurable here.
+
+**Shape attribution changed on 6 of 10 targets, in every case from a confident
+claim to an honest refusal:** S01, S06 and S08 moved from `OVAL_BEYOND_LEAN`, S03
+and S10 from `GENUINELY_OVAL`, and S04 from `CIRCULAR`, all to `NO_ELLIPSE_FIT`.
+Six of ten targets were carrying a shape class derived from a fit that could not
+support one. Note S04 in particular: the pre-DEC-016 verdict was `CIRCULAR`, which
+sounds harmless, but it came from a 0.54-coverage fit whose diameter was 2.7 cm off
+the other models. A wrong "circular" is as unfounded as a wrong "oval".
+
+### 22.2 A prediction that was wrong, and the correction
+
+When DEC-016 was written this section was annotated with the claim that excluding
+the ellipse would **narrow** every other row's deviation, because the model being
+dropped was the one widening the spread. **That was wrong, and the regenerated
+table above shows it.** `circle_algebraic` went from 5.36 to 10.72 cm and
+`circle_geometric` from 7.47 to 7.82 cm — both *wider*; `circle_taubin` went from
+5.36 to 0.86 cm and `circle_pratt` from 11.22 to 10.87 cm — narrower.
+
+The reason is that every deviation is measured against the per-tree *median*, and
+removing a model moves the median itself. So the effect of a validity change on
+the other rows is not directional and cannot be reasoned out — it has to be
+re-run. That is the general lesson, and it applies to any future gate: **a change
+in which models are valid invalidates every agreement number in this section, in
+an unpredictable direction.**
+
+### 22.3 Still outstanding
+
+`circle_pratt` sits ~0.9 cm above the per-tree median (was 1.67 cm). On clean
 synthetic data Pratt is unbiased (section 20.2), so this is a property of
 contaminated real sections rather than of the estimator, and it is worth
 re-checking once reference trees exist.
+
+**The four non-robust circle fits are still ungated, and the raw output shows this
+is worse than a deviation statistic conveys.** On S10 `circle_algebraic` reports a
+176.9 cm diameter with an RMSE of **246.7 cm** and is marked valid; on S07 the
+circle fits report ~3.6 m diameters, inside the 4.0 m plausibility envelope. A
+fit whose residual scatter exceeds its own diameter is not a measurement, and
+nothing currently declines it. The shell-thinness ratio that DEC-016 applies to
+the ellipse is model-independent — S10's circles sit at rmse/D of roughly 1.4
+against the ellipse gate of 0.05 — so it would transfer directly. It is not
+applied here because doing so changes the baseline that every published
+circle-fit comparison rests on, and that deserves its own decision and its own
+measurement rather than being carried in on the back of DEC-016.
 
 ## 23. Height strategy, measured
 
@@ -938,3 +1018,168 @@ with the section 13 rationale for computing a profile at all. Which strategy is
 *most accurate* is unanswerable without field reference, and
 `decision.primary_dbh_source` is the switch that will answer it in one run when the
 reference table exists.
+
+## 24. Ellipse acceptance gates, measured (2026-08-25)
+
+Section 6 has said since the handover that "ellipse acceptance should require
+sufficient angular coverage and should be compared with the circle". Only the
+axis-ratio half of that was ever implemented, and section 22 measured the cost:
+the ellipse was "valid" on 9 of 10 real targets and deviated up to 73 cm from the
+per-tree median. This section is the measurement behind the gates added in
+DEC-016.
+
+**No field data is involved and none is implied.** These are numerical properties
+of the estimator on synthetic geometry with known truth, in the same sense as the
+partial-arc circle bias in section 20.2. They say where the ellipse stops being
+identifiable, not how accurate it is on a tree.
+
+Method: 40 seeds per row, 600 points spread over the arc, 4 mm Gaussian noise.
+Error is in the area-equivalent diameter against the generating truth.
+
+### 24.1 The arc-length cliff, and why a low coverage gate is unsafe
+
+A truly circular stem, D = 0.40 m, fitted with an ellipse:
+
+| observed arc | coverage about fitted centre | largest gap | median abs error | fitted axis ratio |
+| --- | --- | --- | --- | --- |
+| 360 deg | 1.00 | 0 deg | 0.02 cm | 1.00 |
+| 300 deg | 0.86 | 50 deg | 0.03 cm | 1.00 |
+| 270 deg | 0.76 | 85 deg | 0.03 cm | 1.00 |
+| 240 deg | 0.67 | 118 deg | 0.10 cm | 1.01 |
+| 210 deg | 0.60 | 145 deg | 0.29 cm | 1.02 |
+| 180 deg | 0.53 | 170 deg | 1.22 cm | 1.04 |
+| 150 deg | 0.49 | 185 deg | 4.30 cm | 1.14 |
+| 120 deg | 0.49 | 182 deg | **12.26 cm** | **1.45** |
+| 90 deg | 0.53 | 170 deg | **23.18 cm** | **2.27** |
+| 60 deg | — | — | declined (no ellipse solution) | — |
+
+Two things matter here.
+
+**The failure is a false shape claim, not just a wrong number.** At 120 degrees a
+circular stem is reported as a 1.45-ratio oval, and `attribute_ellipticity` then
+reads that as genuine ovality. So the pre-DEC-016 ellipse did not merely add
+error, it manufactured a shape class. The same sweep run on the geometric circle
+for comparison peaks at 6.8 cm and never invents an axis ratio, because a circle
+has no ratio to invent.
+
+**Coverage measured about the fitted centre is not monotone in arc length.** It
+falls to 0.49 at 150 and 120 degrees and then rises again to 0.53 at 90 degrees,
+because a badly constrained fit relocates its own centre and the points end up
+distributed around the wrong point. A coverage threshold set below about 0.55
+therefore does not mean what it appears to mean, and would let the worst cases
+through. `min_coverage_fraction = 0.70` is set deliberately clear of that fold
+rather than at the point where error becomes intolerable. Largest gap *is*
+monotone down to 180 degrees, which is why both are gated and not just one.
+
+The cost of that conservatism is visible and small: the 240-degree case is
+declined although its error was 0.10 cm. A circle is still available there, and
+the project's stated ordering prefers a smaller defensible set.
+
+### 24.2 Shell thinness separates a surface from a volume
+
+A stem surface is a thin shell: at any angle the returns span bark roughness plus
+sensor noise. Attached vegetation is volumetric. Radial rmse normalised by the
+fitted diameter makes that comparable across stem sizes.
+
+| section | rmse / D (median) | ellipse valid before DEC-016 | RANSAC circle valid |
+| --- | --- | --- | --- |
+| circle D0.40, 2 mm noise | 0.0049 | yes | 40/40 |
+| circle D0.40, 8 mm noise | 0.0197 | yes | 40/40 |
+| circle D0.40, 15 mm noise | 0.0367 | yes | 40/40 |
+| ellipse 0.46 x 0.38, 4 mm | 0.0096 | yes | 40/40 |
+| fluted D0.50, amplitude 0.08 | 0.0288 | yes | 40/40 |
+| fluted D0.50, amplitude 0.15 | 0.0531 | yes | 14/40 |
+| fluted D0.50, amplitude 0.25 | 0.0876 | yes | 0/40 |
+| circle + clump 0.22 m offset | 0.0663 | yes | 40/40 |
+| circle + clump 0.30 m offset | 0.0947 | yes | 40/40 |
+| pure blob, no stem at all | 0.2382 | **yes** | 0/40 |
+
+`max_normalised_residual = 0.05` admits 1.5 cm of radial scatter on a 30 cm stem,
+which is generous against any plausible bark-roughness figure, and declines every
+contaminated case. It cannot separate heavy fluting from contamination — flute
+amplitude 0.15 (0.053) and a 0.22 m clump (0.066) overlap, and amplitude 0.25
+(0.088) sits inside the clump range entirely. **That overlap is not a defect of
+the gate, it is the open question of section 20.4 reappearing.** The gate is
+therefore a statement about the *model*, "these points are not an ellipse shell",
+and never a verdict on *why*. Attribution stays with
+`classify_radial_anomaly`, which has the robust circle and the sector structure to
+work with.
+
+Note the last row. Before DEC-016 the ellipse returned a valid fit to a
+structureless blob containing no stem at all, where RANSAC declined on all 40
+seeds. That is the silent-success failure mode in its purest form.
+
+### 24.3 Gate screening
+
+Chosen combination: coverage >= 0.70, largest gap <= 100 deg, rmse/D <= 0.05,
+axis ratio <= 3.0 (unchanged). Screened over 40 seeds per case:
+
+| must be kept | kept | | must be declined | kept |
+| --- | --- | --- | --- | --- |
+| circle full, 2 / 8 / 15 mm noise | 40/40 | | circle 240 / 210 / 180 deg arc | 0/40 |
+| circle 330 / 300 / 270 deg arc | 40/40 | | circle 150 / 120 / 90 deg arc | 0/40 |
+| ellipse full and 300 deg arc | 40/40 | | two 100 deg arcs, 110 deg gap | 0/40 |
+| fluted, amplitude 0.08 | 40/40 | | clump at 0.22 m and 0.30 m | 0/40 |
+| | | | fluted, amplitude 0.15 and 0.25 | 0/40 |
+| | | | pure blob | 0/40 |
+
+The coverage gate is not a hidden eccentricity gate: a complete outline of an
+ellipse surrounds its own centre whatever the axis ratio, so coverage stays at
+1.00 up to ratio 12 and only the explicit axis-ratio gate rejects a flat section.
+That is asserted in the tests, because a coverage gate that quietly suppressed
+oval stems would defeat the purpose of having an ellipse at all.
+
+### 24.4 End-to-end effect on the synthetic plot
+
+The integration scene (15 degree slope, four stems of known diameter) run with the
+gates open and then at the new defaults:
+
+| tree | arc | truth | ellipse D before | error | ratio before | now | recommended model before -> after |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| upright | 360 | 0.42 | 0.420 | 0.0 cm | 1.00 | valid | `circle_ransac` -> `circle_ransac` |
+| leaning 18 deg | 360 | 0.38 | 0.390 | +1.0 cm | 1.06 | valid | `circle_ransac` -> `circle_ransac` |
+| one-sided | 110 | 0.34 | 0.196 | **-14.4 cm** | 1.74 | declined | **`ellipse` -> `circle_ransac`** |
+| fluted, amp 0.12 | 360 | 0.50 | 0.503 | +0.3 cm | 1.00 | valid | `outline_radial_median` -> same |
+
+The one-sided stem is the whole point. Its ellipse was 14.4 cm too small, claimed
+a 1.74 axis ratio on a circular stem, and was the *recommended* model. The tree
+was already refused for inadequate coverage, so no headline diameter changed
+hands, but the recommendation a reviewer sees moved from a 14 cm-wrong ellipse to
+the robust circle, and the shape verdict moved from a false `GENUINELY_OVAL` to an
+honest `NO_ELLIPSE_FIT`. Nothing else in the scene changed.
+
+The fluted stem is the case to watch: at amplitude 0.12 its rmse/D is 0.0426,
+under the 0.05 gate but not by much. Real tropical fluting will push the ellipse
+out of the comparison on some stems. That is the correct model choice — the
+outline exists for those — but it means model-agreement statistics computed after
+DEC-016 are not comparable with those computed before it. Section 22 has been
+regenerated on the sample scan for exactly that reason, and one prediction made
+here before the re-run turned out to be wrong; see section 22.2.
+
+### 24.5 Validated on the real sample scan (2026-08-25)
+
+The point cloud was restored locally, so the gates derived above have now been
+checked against the data that motivated them. Full per-target evidence is in
+section 22.1; the summary:
+
+- **Ellipse validity fell from 9 of 10 targets to 3 of 10**, and the gates
+  selected the well-behaved subset rather than merely thinning it. The three
+  survivors deviate from the median of the other models by 0.1 cm median and
+  0.2 cm max; the six declined by 1.6 cm median and 78.9 cm max. The ellipse row's
+  max deviation fell from 73.15 cm to 0.15 cm.
+- **Both new gates were necessary and neither sufficed alone.** Shell thinness
+  declined 4 targets whose angular coverage was 0.81-0.97 — no coverage threshold
+  would have reached them. Coverage declined 3 more, down to 0.26 on S08. The gap
+  gate never fired alone on this scan.
+- **No reported diameter changed on any target**, and no status or confidence band
+  changed. The gates cost nothing measurable here.
+- **Shape attribution changed on 6 of 10 targets**, in every case from a confident
+  claim to `NO_ELLIPSE_FIT`. Four had been called oval; S04 had been called
+  *circular* on a 0.54-coverage fit, which is an equally unfounded claim in the
+  opposite direction.
+
+This closes the "unvalidated on real stems" caveat for the ellipse gates
+specifically. It is still not field validation: there is no reference table, so
+"deviation from the median of the other models" is internal agreement and not
+error. It says the declined fits were the disagreeing ones, which is what section
+22 measured in the first place. It cannot say the surviving three are *accurate*.

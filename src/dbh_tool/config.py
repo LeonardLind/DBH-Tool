@@ -89,6 +89,38 @@ class CoverageConfig:
 
 
 @dataclass
+class EllipseConfig:
+    """Ellipse acceptance gates (DEC-016).
+
+    An ellipse has five free parameters against the circle's three, so it needs
+    *more* angular support to be identifiable, not the same amount. Docs 02
+    section 6 stated that requirement from the start; until DEC-016 the model was
+    accepted on a diameter-plausibility and axis-ratio check alone, which let it
+    return a confident shape from a quarter arc or a vegetation clump.
+
+    The three added gates are measured on synthetic geometry in docs 02 section
+    24. They are model-adequacy tests -- "these points are not an ellipse shell"
+    -- and not a verdict on *why*: a short arc, a liana and heavy fluting all fail
+    the same gate, and separating those is the job of the anomaly classifier.
+    """
+
+    # An axis ratio above this is not a plausible stem cross-section; it indicates
+    # an under-constrained fit or contamination. Unchanged by DEC-016.
+    max_axis_ratio: float = 3.0
+    # Fraction of the circumference that must be observed, measured about the
+    # fitted centre. Below roughly 0.55 the metric itself stops being a faithful
+    # arc measure, because a badly constrained fit relocates its own centre; the
+    # gate is deliberately set well clear of that fold (docs 02 section 24.1).
+    min_coverage_fraction: float = 0.70
+    # An ellipse extrapolated across a wider unobserved arc than this is modelled
+    # geometry, not measured, by the same argument as outline.max_bridge_gap_deg.
+    max_gap_deg: float = 100.0
+    # Shell thinness: radial rmse as a fraction of the fitted diameter. A stem
+    # surface is a thin shell; a clump of vegetation is a volume.
+    max_normalised_residual: float = 0.05
+
+
+@dataclass
 class OutlineConfig:
     method: str = "radial_median_polygon"
     n_sectors: int = 72
@@ -161,6 +193,7 @@ class RunConfig:
     axis: AxisConfig = field(default_factory=AxisConfig)
     ransac_circle: RansacConfig = field(default_factory=RansacConfig)
     coverage: CoverageConfig = field(default_factory=CoverageConfig)
+    ellipse: EllipseConfig = field(default_factory=EllipseConfig)
     outline: OutlineConfig = field(default_factory=OutlineConfig)
     bootstrap: BootstrapConfig = field(default_factory=BootstrapConfig)
     decision: DecisionConfig = field(default_factory=DecisionConfig)
@@ -213,6 +246,7 @@ _NESTED: dict[str, Any] = {
     "axis": AxisConfig,
     "ransac_circle": RansacConfig,
     "coverage": CoverageConfig,
+    "ellipse": EllipseConfig,
     "outline": OutlineConfig,
     "bootstrap": BootstrapConfig,
     "decision": DecisionConfig,
@@ -241,6 +275,10 @@ PROVISIONAL_PARAMETERS: tuple[str, ...] = (
     "coverage.angular_bin_deg",
     "coverage.min_coverage_fraction",
     "coverage.max_gap_deg",
+    "ellipse.max_axis_ratio",
+    "ellipse.min_coverage_fraction",
+    "ellipse.max_gap_deg",
+    "ellipse.max_normalised_residual",
     "outline.n_sectors",
     "outline.max_bridge_gap_deg",
     "outline.min_occupied_fraction",

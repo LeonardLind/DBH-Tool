@@ -343,6 +343,34 @@ def _num(v, nd: int = 2) -> str:
         return str(v)
 
 
+def cmd_gui(args) -> int:
+    """Open the Tk review window.
+
+    tkinter is imported here rather than at module scope so that every measurement
+    command still works on a Python without it -- a trimmed Linux build, or a
+    container. A missing GUI must never break the CLI.
+    """
+    # Probe tkinter itself rather than wrapping the import of our own package.
+    # `dbh_tool.gui.launch` defers importing the window until it is called, so
+    # wrapping `from .gui import launch` caught nothing -- the ImportError surfaced
+    # from inside the call, one line later and outside the handler. Checking the
+    # actual missing dependency is both precise and honest: any *other* ImportError
+    # from the GUI is a real bug and should still be a traceback.
+    try:
+        import tkinter                    # noqa: F401
+    except ImportError as exc:            # pragma: no cover - environment specific
+        print(f"the GUI needs tkinter, which this Python does not have: {exc}",
+              file=sys.stderr)
+        print("every other command works without it; on Debian/Ubuntu install "
+              "python3-tk, or on Windows reinstall Python with the tcl/tk option",
+              file=sys.stderr)
+        return 2
+    from .gui import launch
+    launch(cloud=args.file, outdir=args.outdir, targets=args.targets,
+           config=args.config)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="dbh", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -417,6 +445,13 @@ def build_parser() -> argparse.ArgumentParser:
     pe.add_argument("--roi", type=float, default=4.0)
     pe.add_argument("--outdir", default="out")
     pe.set_defaults(func=cmd_experiment)
+
+    pw = sub.add_parser("gui", help="open the review window (measure, inspect, approve)")
+    pw.add_argument("file", nargs="?", help="LAS/LAZ to open on startup; optional")
+    pw.add_argument("-c", "--config")
+    pw.add_argument("--targets", help="JSON list of {tree_id, x, y} to preload")
+    pw.add_argument("--outdir", default="out")
+    pw.set_defaults(func=cmd_gui)
     return p
 
 
